@@ -121,15 +121,15 @@ jobs:
           chmod 600 ~/.ssh/voting-app-key.pem
           ssh-keyscan -H ${{ needs.terraform-provision.outputs.ec2_public_ip }} >> ~/.ssh/known_hosts
 
-      - name: Copy and Run setup.sh on EC2
+      - name: Copy and Run Setup.sh on EC2
         run: |
           scp -i ~/.ssh/voting-app-key.pem \
-            terraform/setup.sh \
-            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/setup.sh
+            terraform/Setup.sh \
+            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/Setup.sh
 
           ssh -i ~/.ssh/voting-app-key.pem \
             ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }} \
-            "chmod +x ~/setup.sh && ~/setup.sh"
+            "chmod +x ~/Setup.sh && ~/Setup.sh"
 
       - name: Copy K8s Manifests to EC2
         run: |
