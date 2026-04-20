@@ -20,6 +20,19 @@ spec:
           ports:
             - containerPort: 80
               name: result
+          env:
+            - name: PORT
+              value: "80"
+            - name: DB_HOST
+              value: "db"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: "postgres"
+            - name: DB_USER
+              value: "postgres"
+            - name: DB_PASSWORD
+              value: "postgres"
           resources:
             requests:
               cpu: "100m"
