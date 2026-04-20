@@ -1,33 +1,39 @@
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: worker
   labels:
-    app: example-voting-app
+    app: worker
+  name: worker
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: example-voting-app
+      app: worker
   template:
     metadata:
       labels:
-        app: example-voting-app
+        app: worker
     spec:
       containers:
-      - name: worker
-        image: worker-image:latest
-        env:
-        - name: POSTGRES_HOST
-          value: "db"
-        - name: POSTGRES_PORT
-          value: "5432"
-        - name: POSTGRES_USER
-          value: "postgres"
-        - name: POSTGRES_PASSWORD
-          value: "postgres"
-        - name: REDIS_HOST
-          value: "redis"
-        - name: REDIS_PORT
-          value: "6379"
+        - image: dockersamples/examplevotingapp_worker
+          name: worker
+          env:
+            - name: POSTGRES_HOST
+              value: "db"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "postgres"
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
