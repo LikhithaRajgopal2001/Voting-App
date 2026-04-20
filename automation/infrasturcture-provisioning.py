@@ -30,7 +30,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python terraform_automation.py [provision|plan|apply|destroy|validate]")
         sys.exit(1)
-action = sys.argv[1]
+    action = sys.argv[1]
     actions = {
         "provision": provision,
         "plan":      plan,
