@@ -15,8 +15,15 @@ spec:
         app: vote
     spec:
       containers:
-      - image: dockersamples/examplevotingapp_vote
-        name: vote
-        ports:
-        - containerPort: 80
+        - image: dockersamples/examplevotingapp_vote
           name: vote
+          ports:
+            - containerPort: 80
+              name: vote
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
