@@ -20,6 +20,11 @@ spec:
           ports:
             - containerPort: 80
               name: vote
+          env:
+            - name: OPTION_A
+              value: "Cats"
+            - name: OPTION_B
+              value: "Dogs"
           resources:
             requests:
               cpu: "100m"
