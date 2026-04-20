@@ -6,84 +6,143 @@ on:
       - main
 
 env:
-  IMAGE_NAME: voting-result
+  AWS_REGION: ap-northeast-2
 
 jobs:
 
+  # ─────────────────────────────────────────
+  # JOB 1 — Build & Push Docker Image
+  # ─────────────────────────────────────────
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-    - name: Checkout Repository
-      uses: actions/checkout@v3
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Login to DockerHub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ env.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/voting-result:latest ./example-voting-app/result
 
-    - name: Build Docker Image
-      run: |
-        docker build -t ${{ env.DOCKER_USERNAME }}/voting-result:latest ./example-voting-app/result
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/voting-result:latest
 
-    - name: Push Docker Image
-      run: |
-        docker push ${{ env.DOCKER_USERNAME }}/voting-result:latest
-
-
-
+  # ─────────────────────────────────────────
+  # JOB 2 — Provision Infrastructure
+  # ─────────────────────────────────────────
   terraform-provision:
-    needs: build-and-push   # Waits for build-and-push to complete
     runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v3
-
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ap-northeast-2
-
-    - name: Install Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: 1.6.0
-
-    - name: Install Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-
-    - name: Install Python Dependencies
-      run: |
-        python -m pip install --upgrade pip
-
-    - name: Run Terraform via Python
-      run: |
-        python ${{ env.TERRAFORM_DIR }}/automation/infrasturcture-provisioning.py
-
-    
-  deploy:
     needs: build-and-push
-    runs-on: ubuntu-latest 
+    outputs:
+      ec2_public_ip: ${{ steps.get_outputs.outputs.ec2_public_ip }}
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-    - name: Checkout Repo
-      uses: actions/checkout@v3
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ap-northeast-2
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
 
-    - name: Deploy using kubectl
-      run: |
-        kubectl apply -f k8s/
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Python Dependencies
+        run: pip install boto3
+
+      - name: Run infrastructure-provisioning.py
+        run: |
+          python automation/infrasturcture-provisioning.py provision
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: Get Terraform Outputs
+        id: get_outputs
+        working-directory: example-voting-app/terraform
+        run: |
+          EC2_IP=$(terraform output -raw ec2_public_ip)
+          PRIVATE_KEY=$(terraform output -raw private_key_pem)
+
+          # Pass EC2 IP to Job 3
+          echo "ec2_public_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "EC2 IP: $EC2_IP"
+
+          # Save private key to temp file
+          echo "$PRIVATE_KEY" > /tmp/voting-app-key.pem
+
+      - name: Push Private Key to GitHub Secrets
+        run: |
+          PRIVATE_KEY=$(cat /tmp/voting-app-key.pem)
+
+          # Push private key to GitHub Secrets
+          gh secret set EC2_SSH_PRIVATE_KEY --body "$PRIVATE_KEY"
+
+          echo "Private key pushed to GitHub Secrets"
+
+          # Delete temp file from runner
+          rm -f /tmp/voting-app-key.pem
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  # ─────────────────────────────────────────
+  # JOB 3 — Deploy on EC2
+  # ─────────────────────────────────────────
+  deploy:
+    runs-on: ubuntu-latest
+    needs: terraform-provision
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/voting-app-key.pem
+          chmod 600 ~/.ssh/voting-app-key.pem
+          ssh-keyscan -H ${{ needs.terraform-provision.outputs.ec2_public_ip }} >> ~/.ssh/known_hosts
+
+      - name: Copy and Run Setup.sh on EC2
+        run: |
+          scp -i ~/.ssh/voting-app-key.pem \
+            example-voting-app/terraform/Setup.sh \
+            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/Setup.sh
+
+          ssh -i ~/.ssh/voting-app-key.pem \
+            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }} \
+            "chmod +x ~/Setup.sh && ~/Setup.sh"
+
+      - name: Copy K8s Manifests to EC2
+        run: |
+          scp -i ~/.ssh/voting-app-key.pem -r \
+            example-voting-app/k8s-specifications/ \
+            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/k8s-specifications/
+
+      - name: Deploy with kubectl
+        run: |
+          ssh -i ~/.ssh/voting-app-key.pem \
+            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }} \
+            "kubectl apply -f ~/k8s-specifications/ && kubectl get pods"
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: rm -f ~/.ssh/voting-app-key.pem
