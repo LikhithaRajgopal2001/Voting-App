@@ -124,12 +124,12 @@ jobs:
       - name: Copy and Run Setup.sh on EC2
         run: |
           scp -i ~/.ssh/voting-app-key.pem \
-            terraform/Setup.sh \
-            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/Setup.sh
+            terraform/setup.sh \
+            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/setup.sh
 
           ssh -i ~/.ssh/voting-app-key.pem \
             ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }} \
-            "chmod +x ~/Setup.sh && ~/Setup.sh"
+            "chmod +x ~/setup.sh && ~/setup.sh"
 
       - name: Copy K8s Manifests to EC2
         run: |
