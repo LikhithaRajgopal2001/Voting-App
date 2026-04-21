@@ -27,11 +27,11 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/voting-result:latest ./example-voting-app/result
+          docker build -t ${{ vars.DOCKER_USERNAME }}/voting-result:latest ./example-voting-app/result
 
       - name: Push Docker Image
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/voting-result:latest
+          docker push ${{ vars.DOCKER_USERNAME }}/voting-result:latest
 
   # ─────────────────────────────────────────
   # JOB 2 — Provision Infrastructure
