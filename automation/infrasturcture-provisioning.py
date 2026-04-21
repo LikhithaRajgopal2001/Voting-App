@@ -33,12 +33,12 @@ if __name__ == "__main__":
     action = sys.argv[1]
     actions = {
         "provision": provision,
-        "plan":      plan,
+        "plan":    plan,
         "apply":     apply,
         "destroy":   destroy,
         "validate":  validate,
     }
-if action not in actions:
+    if action not in actions:
         print(f"Unknown action: {action}")
         sys.exit(1)
-actions[action]()
+    actions[action]()
