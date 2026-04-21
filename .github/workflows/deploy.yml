@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  AWS_REGION: ap-northeast-2
+  AWS_REGION: ap-south-1
 
 jobs:
 
