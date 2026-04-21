@@ -29,7 +29,7 @@ jobs:
         run: |
           docker build -t ${{ vars.DOCKER_USERNAME }}/voting-result:latest ./example-voting-app/result
 
-      - name: Push Docker Image
+      - name: Push Docker Images
         run: |
           docker push ${{ vars.DOCKER_USERNAME }}/voting-result:latest
 
