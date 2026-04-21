@@ -14,7 +14,7 @@ variable "ami_id" {
   type        = string
   default     = "ami-0c7217cdde317cfec"
 }
-variable "key_name" {
-  description = "Your EC2 key pair name to SSH into the instance"
-  type        = string
-}
+#variable "key_name" {
+#  description = "Your EC2 key pair name to SSH into the instance"
+ # type        = string
+#}
