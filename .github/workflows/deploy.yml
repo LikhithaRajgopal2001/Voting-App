@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-#tohardbutnotleavingthis
+
 env:
   AWS_REGION: ap-south-1
 
@@ -91,6 +91,19 @@ jobs:
           echo "$PRIVATE_KEY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      # ✅ Cleanup on failure
+      - name: Cleanup Infrastructure on Failure
+        if: failure()
+        working-directory: terraform/
+        run: |
+          echo "❌ Job failed! Destroying all AWS resources..."
+          terraform destroy -auto-approve
+          echo "✅ Infrastructure destroyed successfully"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
   # ─────────────────────────────────────────
   # JOB 3 — Deploy on EC2
   # ─────────────────────────────────────────
@@ -107,7 +120,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ needs.terraform-provision.outputs.private_key_pem }}" > ~/.ssh/voting-app-key.pem
           chmod 600 ~/.ssh/voting-app-key.pem
-          ssh-keyscan -H ${{ needs.terraform-provision.outputs.ec2_public_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.terraform-provision.outputs.ec2_public_ip }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Copy and Run Setup.sh on EC2
         run: |
@@ -117,20 +130,102 @@ jobs:
 
           ssh -i ~/.ssh/voting-app-key.pem \
             ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }} \
-            "chmod +x ~/setup.sh && ~/setup.sh"
+            "chmod +x ~/setup.sh && sudo ~/setup.sh"
 
+      # ✅ FIXED: Copy K8s Manifests to EC2
       - name: Copy K8s Manifests to EC2
         run: |
-          scp -i ~/.ssh/voting-app-key.pem -r \
-            example-voting-app/k8s-specifications/ \
-            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }}:~/k8s-specifications/
+          EC2_IP="${{ needs.terraform-provision.outputs.ec2_public_ip }}"
+          SSH_KEY="~/.ssh/voting-app-key.pem"
+          
+          echo "📋 Copying K8s manifests to EC2..."
+          
+          # Create k8s-specifications directory on EC2
+          ssh -i $SSH_KEY ubuntu@$EC2_IP "mkdir -p ~/k8s-specifications"
+          
+          # Copy all YAML files from k8s-specifications
+          scp -i $SSH_KEY example-voting-app/k8s-specifications/*.yaml \
+            ubuntu@$EC2_IP:~/k8s-specifications/
+          
+          echo "✅ K8s manifests copied successfully"
+          
+          # Verify files were copied
+          ssh -i $SSH_KEY ubuntu@$EC2_IP "echo '📦 Files copied:' && ls -la ~/k8s-specifications/"
 
+      # ✅ Deploy with kubectl
       - name: Deploy with kubectl
         run: |
-          ssh -i ~/.ssh/voting-app-key.pem \
-            ubuntu@${{ needs.terraform-provision.outputs.ec2_public_ip }} \
-            "kubectl apply -f ~/k8s-specifications/ && kubectl get pods"
+          EC2_IP="${{ needs.terraform-provision.outputs.ec2_public_ip }}"
+          SSH_KEY="~/.ssh/voting-app-key.pem"
+          
+          ssh -i $SSH_KEY ubuntu@$EC2_IP << 'EOF'
+            echo "🚀 Deploying voting app to k3s..."
+            echo ""
+            
+            # Apply all K8s manifests
+            sudo /usr/local/bin/k3s kubectl apply -f ~/k8s-specifications/
+            
+            echo ""
+            echo "⏳ Waiting for deployments to be ready..."
+            sleep 10
+            
+            echo ""
+            echo "📊 Deployment Status:"
+            sudo /usr/local/bin/k3s kubectl get pods -o wide
+            
+            echo ""
+            echo "📋 Services:"
+            sudo /usr/local/bin/k3s kubectl get svc -o wide
+            
+            echo ""
+            echo "✅ Voting App deployed successfully!"
+            echo ""
+            echo "Access the application at:"
+            echo "  Vote App:    http://$(hostname -I | awk '{print $1}'):30080"
+            echo "  Result App:  http://$(hostname -I | awk '{print $1}'):30081"
+          EOF
 
       - name: Cleanup SSH Key
         if: always()
         run: rm -f ~/.ssh/voting-app-key.pem
+
+      # ✅ Cleanup on failure
+      - name: Cleanup Infrastructure on Deployment Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed! Destroying all AWS resources..."
+          cd terraform/
+          terraform init
+          terraform destroy -auto-approve
+          echo "✅ Infrastructure destroyed successfully"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+        continue-on-error: true
+
+  # ─────────────────────────────────────────
+  # JOB 4 — Notification (Optional)
+  # ─────────────────────────────────────────
+  notify:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, terraform-provision, deploy]
+    if: always()
+    steps:
+      - name: Workflow Status Summary
+        run: |
+          echo "## 📊 Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐳 Build & Push | ${{ needs.build-and-push.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏗️ Terraform Provision | ${{ needs.terraform-provision.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🚀 Deploy | ${{ needs.deploy.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All jobs completed successfully!**" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.terraform-provision.result }}" == "failure" ] || [ "${{ needs.deploy.result }}" == "failure" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Deployment failed - Resources have been cleaned up**" >> $GITHUB_STEP_SUMMARY
+          fi
