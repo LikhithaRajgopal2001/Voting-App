@@ -8,9 +8,9 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = var.region
-}
+#provider "aws" {
+ # region = var.region
+#}
 
 # Create SSH Key Pair
 resource "tls_private_key" "voting_key" {
