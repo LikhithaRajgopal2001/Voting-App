@@ -22,14 +22,14 @@ output "security_group_id" {
   description = "The security group ID for the voting application"
 }
 
-# SSH Private Key (for deploy.yml to retrieve)
+# SSH Private Key
 output "private_key_pem" {
   value       = tls_private_key.voting_key.private_key_pem
   description = "The private key for SSH access to the EC2 instance"
   sensitive   = true
 }
 
-# SSH Key Pair Name
+# Key Pair Name
 output "key_pair_name" {
   value       = aws_key_pair.voting_keypair.key_name
   description = "The name of the SSH key pair"
