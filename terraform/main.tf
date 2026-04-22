@@ -8,27 +8,40 @@ terraform {
   }
 }
 
-#provider "aws" {
- # region = var.region
-#}
+provider "aws" {
+  region = var.region
+}
 
-# Create SSH Key Pair
+# Generate a unique suffix for resources to avoid conflicts
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+# Create SSH Key Pair with unique name
 resource "tls_private_key" "voting_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
 }
 
 resource "aws_key_pair" "voting_keypair" {
-  key_name   = var.key_name
+  key_name   = "voting-app-key-${random_string.suffix.result}"
   public_key = tls_private_key.voting_key.public_key_openssh
-}
-
-# Create VPC
-resource "aws_vpc" "voting_vpc" {
-  cidr_block = "10.0.0.0/16"
 
   tags = {
-    Name = "voting-app-vpc"
+    Name = "voting-app-keypair-${random_string.suffix.result}"
+  }
+}
+
+# Create VPC with unique name
+resource "aws_vpc" "voting_vpc" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "voting-vpc-${random_string.suffix.result}"
   }
 }
 
@@ -40,7 +53,7 @@ resource "aws_subnet" "public_subnet" {
   availability_zone       = "${var.region}a"
 
   tags = {
-    Name = "voting-public-subnet"
+    Name = "voting-subnet-${random_string.suffix.result}"
   }
 }
 
@@ -49,7 +62,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.voting_vpc.id
 
   tags = {
-    Name = "voting-igw"
+    Name = "voting-igw-${random_string.suffix.result}"
   }
 }
 
@@ -63,7 +76,7 @@ resource "aws_route_table" "public_rt" {
   }
 
   tags = {
-    Name = "voting-public-rt"
+    Name = "voting-rt-${random_string.suffix.result}"
   }
 }
 
@@ -73,9 +86,9 @@ resource "aws_route_table_association" "public_assoc" {
   route_table_id = aws_route_table.public_rt.id
 }
 
-# Security Group
+# Security Group with unique name
 resource "aws_security_group" "voting_sg" {
-  name        = "voting-app-sg"
+  name        = "voting-sg-${random_string.suffix.result}"
   description = "Allow SSH and HTTP"
   vpc_id      = aws_vpc.voting_vpc.id
 
@@ -119,7 +132,7 @@ resource "aws_security_group" "voting_sg" {
   }
 
   tags = {
-    Name = "voting-app-sg"
+    Name = "voting-sg-${random_string.suffix.result}"
   }
 }
 
@@ -133,7 +146,13 @@ resource "aws_instance" "voting_server" {
 
   key_name = aws_key_pair.voting_keypair.key_name
 
+  user_data = base64encode(templatefile("${path.module}/user_data.sh", {}))
+
   tags = {
-    Name = "voting-app-server"
+    Name = "voting-server-${random_string.suffix.result}"
   }
+
+  depends_on = [
+    aws_internet_gateway.igw
+  ]
 }
