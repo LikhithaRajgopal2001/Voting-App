@@ -1,5 +1,4 @@
 name: Voting App CI/CD
-#tryingtohardtofix
 on:
   push:
     branches:
@@ -41,6 +40,7 @@ jobs:
     needs: build-and-push
     outputs:
       ec2_public_ip: ${{ steps.get_outputs.outputs.ec2_public_ip }}
+      private_key_pem: ${{ steps.get_outputs.outputs.private_key_pem }}
 
     steps:
       - name: Checkout Repository
@@ -82,26 +82,14 @@ jobs:
           EC2_IP=$(terraform output -raw ec2_public_ip)
           PRIVATE_KEY=$(terraform output -raw private_key_pem)
 
-          # Pass EC2 IP to Job 3
+          # Pass outputs to next job
           echo "ec2_public_ip=$EC2_IP" >> $GITHUB_OUTPUT
           echo "EC2 IP: $EC2_IP"
-
-          # Save private key to temp file
-          echo "$PRIVATE_KEY" > /tmp/voting-app-key.pem
-
-      - name: Push Private Key to GitHub Secrets
-        run: |
-          PRIVATE_KEY=$(cat /tmp/voting-app-key.pem)
-
-          # Push private key to GitHub Secrets
-          gh secret set EC2_SSH_PRIVATE_KEY --body "$PRIVATE_KEY"
-
-          echo "Private key pushed to GitHub Secrets"
-
-          # Delete temp file from runner
-          rm -f /tmp/voting-app-key.pem
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          
+          # Pass private key as multiline output
+          echo "private_key_pem<<EOF" >> $GITHUB_OUTPUT
+          echo "$PRIVATE_KEY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────
   # JOB 3 — Deploy on EC2
@@ -117,7 +105,7 @@ jobs:
       - name: Set up SSH Key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/voting-app-key.pem
+          echo "${{ needs.terraform-provision.outputs.private_key_pem }}" > ~/.ssh/voting-app-key.pem
           chmod 600 ~/.ssh/voting-app-key.pem
           ssh-keyscan -H ${{ needs.terraform-provision.outputs.ec2_public_ip }} >> ~/.ssh/known_hosts
 
