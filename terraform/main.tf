@@ -143,7 +143,7 @@ resource "aws_instance" "voting_server" {
 
   key_name = aws_key_pair.voting_keypair.key_name
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {}))
+  #user_data = base64encode(templatefile("${path.module}/user_data.sh", {}))
 
   tags = {
     Name = "voting-server-${random_string.suffix.result}"
