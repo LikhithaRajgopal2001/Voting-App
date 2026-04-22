@@ -8,9 +8,6 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = var.region
-}
 
 # Generate a unique suffix for resources to avoid conflicts
 resource "random_string" "suffix" {
